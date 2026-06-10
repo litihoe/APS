@@ -145,9 +145,32 @@ def test_reactive_policy_round_trip():
         assert r["planned_start"] == base_rows[r["work_order"]]["planned_start"]
 
 
+def test_manual_pin_freezes_operation():
+    """A planner's pin (pinned=1 on the row) must hold the op in place even
+    with a zero freeze window, on a machine that could otherwise move it."""
+    payload = _payload()
+    base = solve(build_problem(payload), max_time_s=10.0)
+    rows = schedule_to_rows(base, payload)
+
+    target = rows[0]
+    target["pinned"] = 1
+    pinned_op = f"{target['work_order']}::{target['operation_index']}"
+
+    # Zero freeze window => only the manual pin should hold anything.
+    policy = build_policy(rows, payload, freeze_minutes=0)
+    assert pinned_op in policy.pinned_op_ids
+
+    resolved = solve(build_problem(payload), max_time_s=10.0, policy=policy)
+    res = {f"{r['work_order']}::{r['operation_index']}": r
+           for r in schedule_to_rows(resolved, payload)}
+    assert res[pinned_op]["workstation"] == target["workstation"]
+    assert res[pinned_op]["planned_start"] == target["planned_start"]
+
+
 if __name__ == "__main__":
     test_problem_conversion()
     test_round_trip_rows()
     test_unschedulable_machine_rejected()
     test_reactive_policy_round_trip()
+    test_manual_pin_freezes_operation()
     print("All adapter tests passed.")

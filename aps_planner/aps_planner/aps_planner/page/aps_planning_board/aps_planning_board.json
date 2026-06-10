@@ -1,0 +1,13 @@
+{
+ "doctype": "Page",
+ "name": "aps-planning-board",
+ "page_name": "aps-planning-board",
+ "title": "APS Planning Board",
+ "module": "APS Planner",
+ "standard": "Yes",
+ "system_page": 0,
+ "roles": [
+  {"role": "System Manager"},
+  {"role": "Manufacturing Manager"}
+ ]
+}

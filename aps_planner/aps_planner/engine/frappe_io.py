@@ -338,7 +338,7 @@ def _prior_rows(run_name: str) -> list[dict]:
         "APS Scheduled Operation",
         filters={"schedule_run": run_name},
         fields=["work_order", "operation_index", "workstation", "operator",
-                "tool", "planned_start", "setup_end", "planned_end"],
+                "tool", "planned_start", "setup_end", "planned_end", "pinned"],
     )
 
 

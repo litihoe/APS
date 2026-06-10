@@ -53,6 +53,35 @@ def get_schedule(schedule_run: str | None = None) -> dict:
             "makespan_minutes": run.makespan_minutes,
             "on_time_jobs": run.on_time_jobs,
             "total_jobs": run.total_jobs,
+            "deviation_score": run.deviation_score,
+            "reassigned_ops": run.reassigned_ops,
         },
         "operations": ops,
     }
+
+
+@frappe.whitelist()
+def get_run_status(schedule_run: str) -> dict:
+    """Lightweight poll target for the board's Re-plan button."""
+    run = frappe.db.get_value(
+        "APS Schedule Run",
+        schedule_run,
+        ["status", "solver_status"],
+        as_dict=True,
+    )
+    return run or {"status": "Unknown", "solver_status": None}
+
+
+@frappe.whitelist()
+def pin_operation(name: str, pinned: int = 1) -> dict:
+    """Toggle the planner's manual pin on one scheduled operation.
+
+    A pinned operation is frozen in subsequent reactive re-solves (the solver
+    treats it exactly like an in-progress job), letting a planner lock a
+    decision the optimiser would otherwise be free to revise.
+    """
+    frappe.only_for(("System Manager", "Manufacturing Manager"))
+    frappe.db.set_value(
+        "APS Scheduled Operation", name, "pinned", 1 if int(pinned) else 0
+    )
+    return {"name": name, "pinned": 1 if int(pinned) else 0}

@@ -8,11 +8,13 @@ shops (CNC, EDM, grinding, aerospace/medical parts). Target architecture:
 - **Google OR-Tools (CP-SAT)** as the optimisation backbone, running as a
   separate stateless solver service.
 
-The repository contains the **Phase 1 solver core** (framework-agnostic
-FJSSP engine, de-risked first), the **Phase 2 Frappe app** (`aps_planner`)
-that drives it from ERPNext data, **Phase 3 reactive rescheduling** (the
-minimal-perturbation re-solve that makes the planning *dynamic*), and the
-**Phase 4 OEE feedback loop** (the plan learns the shop from Job Card actuals).
+The repository contains all five phases: the **Phase 1 solver core**
+(framework-agnostic FJSSP engine, de-risked first), the **Phase 2 Frappe app**
+(`aps_planner`) that drives it from ERPNext data, **Phase 3 reactive
+rescheduling** (the minimal-perturbation re-solve that makes the planning
+*dynamic*), the **Phase 4 OEE feedback loop** (the plan learns the shop from
+Job Card actuals), and the **Phase 5 planner board** (a Gantt UI with KPIs,
+one-click re-plan, and click-to-pin).
 
 ## What the prototype does
 
@@ -46,11 +48,17 @@ aps_planner/                 # Phase 2: Frappe app (install with bench)
     engine/
       adapter.py             # pure payload <-> ShopProblem/rows (no frappe import)
       frappe_io.py           # DocTypes -> payload -> solve -> DocTypes
+      calibration.py         # pure OEE EWMA recalibration (no frappe import)
+      oee_io.py              # Job Cards + Downtime Entry -> calibration -> profiles
     aps_planner/doctype/     # 10 DocTypes (see below)
+    aps_planner/page/aps_planning_board/   # Phase 5 Gantt board (Desk page)
+    aps_planner/workspace/                 # desk workspace + shortcuts
 
 tests/
   test_schedule_valid.py   # independently re-checks every constraint on the output
-  test_adapter.py          # payload->solve->rows round trip (no bench needed)
+  test_adapter.py          # payload->solve->rows round trip + pinning (no bench)
+  test_reschedule.py       # reactive minimal-perturbation re-solve
+  test_calibration.py      # OEE feedback-loop math
 ```
 
 ## Frappe app (`aps_planner`)
@@ -122,6 +130,34 @@ the plan. Factors are clamped to sane bounds, thin evidence (< 5 ops) leaves a
 factor untouched, and every update writes an audit note
 (`P: observed 0.80 over 6 ops, 1.00 -> 0.94; …`) onto the profile.
 
+### Planner board (Phase 5)
+
+A Frappe Desk page (**APS Planner → Planning Board**, route `aps-planning-board`)
+that turns the schedule into a planner-facing view:
+
+- **KPI strip** — on-time %, weighted tardiness, makespan, and ops reassigned
+  by the last re-solve.
+- **Machine-timeline Gantt** — rows are workstations, x is time; each bar is an
+  operation coloured by job, with the attended-setup portion hatched. Built as
+  a lightweight self-contained renderer (no external Gantt dependency) so the
+  resource-row view matches how a shop actually reads a board.
+- **Re-plan** button runs `run_schedule` and polls `get_run_status` until the
+  background solve finishes, then reloads.
+- **Click-to-pin** — clicking a bar calls `pin_operation`, which sets `pinned`
+  on the APS Scheduled Operation. Pinned ops are frozen in the next reactive
+  re-solve (the solver treats them like in-progress work, via the same
+  `ReschedulePolicy.pinned_op_ids` path), letting a planner lock a decision the
+  optimiser would otherwise revise.
+
+> **A note on the front end.** The brief mentioned a Django front end; this
+> build uses **Frappe's native Desk UI** instead. Frappe is already a full
+> Python web framework sharing the ORM, auth, permissions, and background-job
+> queue the planner relies on — bolting a separate Django app alongside it would
+> duplicate all of that and fight over the same database. The optimisation core
+> stays framework-agnostic regardless, so a standalone Django (or React) client
+> could later consume the same whitelisted `get_schedule` / `run_schedule`
+> REST endpoints if an external UI is ever needed.
+
 ### Install on a bench
 
 ```bash
@@ -157,7 +193,7 @@ production scheduler manages with a time-boxed, warm-started rolling solve.
 - **Phase 2 — Frappe integration.** DocTypes, adapter, background solve, REST API. ✅ *(needs a live bench for end-to-end verification)*
 - **Phase 3 — Reactive rescheduling.** Freeze window + warm start + minimal-perturbation objective; event triggers enqueue debounced re-solves. ✅
 - **Phase 4 — OEE feedback loop.** Weekly EWMA recalibration of performance/availability/yield from Job Card actuals + Downtime Entries. ✅
-- **Phase 5 — Planner UX.** Gantt board, what-if simulation, manual pinning, KPI dashboards.
+- **Phase 5 — Planner board.** Desk page: machine-timeline Gantt, KPI strip, one-click re-plan, click-to-pin. ✅ *(needs a live bench to view)*
 
 ### Modelling notes / next refinements
 

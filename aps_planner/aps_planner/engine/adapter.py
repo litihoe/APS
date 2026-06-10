@@ -195,8 +195,11 @@ def build_policy(
     horizon_start = _parse(payload["horizon_start"])
     horizon = int(payload["horizon_minutes"])
     prior_ops = []
+    manual_pins: set[str] = set()
     for r in prior_rows:
         op_id = f"{r['work_order']}::{r['operation_index']}"
+        if r.get("pinned"):
+            manual_pins.add(op_id)
         s = _to_minutes(r["planned_start"], horizon_start, horizon)
         prior_ops.append(
             ScheduledOp(
@@ -220,6 +223,7 @@ def build_policy(
         now=0,  # the new horizon starts at "now"
         freeze_horizon=freeze_minutes,
         previous=prior,
+        pinned_op_ids=frozenset(manual_pins),
         machine_change_penalty=machine_change_penalty,
         start_shift_penalty=start_shift_penalty,
     )

@@ -1,0 +1,31 @@
+{
+ "doctype": "Workspace",
+ "name": "APS Planner",
+ "label": "APS Planner",
+ "module": "APS Planner",
+ "title": "APS Planner",
+ "icon": "calendar",
+ "public": 1,
+ "is_hidden": 0,
+ "sequence_id": 30.0,
+ "content": "[{\"id\":\"aps_header\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">APS Planner</span>\",\"col\":12}},{\"id\":\"aps_sc\",\"type\":\"card\",\"data\":{\"card_name\":\"Planning\",\"col\":4}},{\"id\":\"aps_master\",\"type\":\"card\",\"data\":{\"card_name\":\"Master Data\",\"col\":4}},{\"id\":\"aps_out\",\"type\":\"card\",\"data\":{\"card_name\":\"Schedule\",\"col\":4}}]",
+ "shortcuts": [
+  {"type": "Page", "link_to": "aps-planning-board", "label": "Planning Board", "color": "Blue"},
+  {"type": "DocType", "link_to": "APS Schedule Run", "label": "Schedule Runs"}
+ ],
+ "links": [
+  {"type": "Card Break", "label": "Planning", "onboard": 1},
+  {"type": "Link", "link_type": "Page", "link_to": "aps-planning-board", "label": "Planning Board", "onboard": 1},
+  {"type": "Link", "link_type": "DocType", "link_to": "APS Schedule Run", "label": "Schedule Run"},
+
+  {"type": "Card Break", "label": "Master Data"},
+  {"type": "Link", "link_type": "DocType", "link_to": "APS Machine Profile", "label": "Machine Profile"},
+  {"type": "Link", "link_type": "DocType", "link_to": "APS Operator", "label": "Operator"},
+  {"type": "Link", "link_type": "DocType", "link_to": "APS Operation Profile", "label": "Operation Profile"},
+  {"type": "Link", "link_type": "DocType", "link_to": "APS Skill", "label": "Skill"},
+  {"type": "Link", "link_type": "DocType", "link_to": "APS Tool", "label": "Tool"},
+
+  {"type": "Card Break", "label": "Schedule"},
+  {"type": "Link", "link_type": "DocType", "link_to": "APS Scheduled Operation", "label": "Scheduled Operation"}
+ ]
+}
