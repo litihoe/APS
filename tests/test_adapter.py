@@ -16,7 +16,11 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
 sys.path.insert(0, os.path.join(_ROOT, "aps_planner"))
 
-from aps_planner.engine.adapter import build_problem, schedule_to_rows  # noqa: E402
+from aps_planner.engine.adapter import (  # noqa: E402
+    build_policy,
+    build_problem,
+    schedule_to_rows,
+)
 from aps_solver import solve  # noqa: E402
 
 H_START = datetime(2026, 6, 10, 8, 0)
@@ -121,8 +125,29 @@ def test_unschedulable_machine_rejected():
         raise AssertionError("expected ValueError for unknown machine")
 
 
+def test_reactive_policy_round_trip():
+    """Persisted rows -> build_policy -> re-solve stays on the prior plan."""
+    payload = _payload()
+    base = solve(build_problem(payload), max_time_s=10.0)
+    prior_rows = schedule_to_rows(base, payload)
+
+    # Re-solve the unchanged shop reactively, freezing a wide window.
+    policy = build_policy(prior_rows, payload, freeze_minutes=10_000)
+    resolved = solve(build_problem(payload), max_time_s=10.0, policy=policy)
+    assert resolved.status in ("OPTIMAL", "FEASIBLE")
+
+    # Everything was pinned, so the plan is identical and nothing moved.
+    assert resolved.reassigned_ops == 0
+    assert resolved.deviation == 0
+    base_rows = {r["work_order"]: r for r in prior_rows}
+    for r in schedule_to_rows(resolved, payload):
+        assert r["workstation"] == base_rows[r["work_order"]]["workstation"]
+        assert r["planned_start"] == base_rows[r["work_order"]]["planned_start"]
+
+
 if __name__ == "__main__":
     test_problem_conversion()
     test_round_trip_rows()
     test_unschedulable_machine_rejected()
+    test_reactive_policy_round_trip()
     print("All adapter tests passed.")

@@ -64,6 +64,52 @@ class Schedule:
     operations: list[ScheduledOp]
     job_tardiness: dict[str, int]
     solve_time_s: float
+    # Perturbation vs. the previous plan (reactive re-solves only; 0 otherwise).
+    deviation: int = 0
+    reassigned_ops: int = 0
+
+
+@dataclass
+class ReschedulePolicy:
+    """Turns a static solve into a *minimal-perturbation* reactive re-solve.
+
+    A dynamic shop re-plans constantly (a machine breaks, a rush order lands,
+    actuals drift). Re-optimising from scratch is correct but *nervous*: it can
+    reshuffle the whole floor for a trivial gain, which operators rightly
+    distrust. This policy keeps the new plan close to the one already on the
+    floor:
+
+    * **Freeze.** Operations that have started, or start within
+      ``freeze_horizon`` of ``now`` in the previous plan, are pinned to their
+      previous machine / operator / start time — you cannot un-start a job.
+    * **Warm start.** Every other operation hints CP-SAT toward its previous
+      assignment, so the solver explores near the incumbent first.
+    * **Stability objective.** Changing an operation's machine, or shifting its
+      start, is penalised. This sits *below* tardiness (on-time delivery still
+      wins) but *above* makespan, so the plan only churns when it actually
+      buys due-date performance.
+    """
+
+    now: int = 0
+    freeze_horizon: int = 0
+    previous: "Schedule | None" = None
+    pinned_op_ids: frozenset[str] = frozenset()
+    machine_change_penalty: int = 100
+    start_shift_penalty: int = 1
+
+    def resolve_pins(self) -> set[str]:
+        pinned = set(self.pinned_op_ids)
+        if self.previous is not None:
+            cutoff = self.now + self.freeze_horizon
+            for so in self.previous.operations:
+                if so.start < cutoff:
+                    pinned.add(so.op_id)
+        return pinned
+
+    def prior_by_op(self) -> dict[str, "ScheduledOp"]:
+        if self.previous is None:
+            return {}
+        return {so.op_id: so for so in self.previous.operations}
 
 
 def _effective_run(op: Operation, performance_factor: float) -> int:
@@ -90,9 +136,17 @@ def _off_shift_windows(
     return blocked
 
 
-def solve(problem: ShopProblem, max_time_s: float = 20.0) -> Schedule:
+def solve(
+    problem: ShopProblem,
+    max_time_s: float = 20.0,
+    policy: "ReschedulePolicy | None" = None,
+) -> Schedule:
     model = cp_model.CpModel()
     H = problem.horizon
+
+    pinned = policy.resolve_pins() if policy else set()
+    prior = policy.prior_by_op() if policy else {}
+    now = policy.now if policy else 0
 
     # Per-machine and per-operator interval buckets for NoOverlap.
     machine_intervals: dict[str, list] = {m: [] for m in problem.machines}
@@ -104,10 +158,18 @@ def solve(problem: ShopProblem, max_time_s: float = 20.0) -> Schedule:
     end: dict[str, cp_model.IntVar] = {}
     mach_lit: dict[str, dict[str, cp_model.IntVar]] = {}
     oper_lit: dict[str, dict[str, cp_model.IntVar]] = {}
+    # Stability (deviation-from-previous-plan) penalty terms.
+    deviation_terms: list = []
+    reassign_lits: list = []
 
     for op in problem.all_operations():
         job = problem.jobs[op.job_id]
-        s = model.NewIntVar(job.release_time, H, f"start_{op.id}")
+        prev = prior.get(op.id)
+        is_pinned = op.id in pinned and prev is not None
+        # Non-pinned work can't be scheduled into the past; pinned work keeps
+        # its (possibly already-started) previous start, so it floors at 0.
+        lo = 0 if is_pinned else max(job.release_time, now)
+        s = model.NewIntVar(lo, H, f"start_{op.id}")
         e = model.NewIntVar(0, H, f"end_{op.id}")
         size = model.NewIntVar(0, H, f"size_{op.id}")
         model.Add(size == e - s)
@@ -161,6 +223,34 @@ def solve(problem: ShopProblem, max_time_s: float = 20.0) -> Schedule:
             tiv = model.NewIntervalVar(s, size, e, f"ti_{op.id}")
             tool_intervals[op.required_tool].append(tiv)
 
+        # ---- Reactive rescheduling: pin / warm-start / penalise drift ------ #
+        if prev is not None:
+            prev_m_ok = prev.machine_id in lits
+            if is_pinned and prev_m_ok:
+                # Freeze this operation exactly where it already is.
+                model.Add(s == prev.start)
+                model.Add(lits[prev.machine_id] == 1)
+                if prev.operator_id and prev.operator_id in oper_lit[op.id]:
+                    model.Add(oper_lit[op.id][prev.operator_id] == 1)
+            else:
+                # Warm start from the incumbent, then penalise moving away.
+                model.AddHint(s, min(max(prev.start, lo), H))
+                if prev_m_ok:
+                    for m_id, lit in lits.items():
+                        model.AddHint(lit, 1 if m_id == prev.machine_id else 0)
+                    # Machine reassignment penalty (1 - stayed-on-prev-machine).
+                    if policy.machine_change_penalty:
+                        deviation_terms.append(
+                            policy.machine_change_penalty
+                            * (1 - lits[prev.machine_id])
+                        )
+                        reassign_lits.append(1 - lits[prev.machine_id])
+                # Absolute start-time shift penalty.
+                if policy.start_shift_penalty:
+                    shift = model.NewIntVar(0, H, f"shift_{op.id}")
+                    model.AddAbsEquality(shift, s - prev.start)
+                    deviation_terms.append(policy.start_shift_penalty * shift)
+
     # ---- Routing precedence within each job -------------------------------- #
     for job in problem.jobs.values():
         ordered = sorted(job.operations, key=lambda o: o.index)
@@ -212,8 +302,28 @@ def solve(problem: ShopProblem, max_time_s: float = 20.0) -> Schedule:
 
     weighted_tardiness = model.NewIntVar(0, H * 10_000, "weighted_tardiness")
     model.Add(weighted_tardiness == sum(tardiness_terms))
-    # Lexicographic-ish: tardiness dominates, makespan breaks ties.
-    model.Minimize(weighted_tardiness * (H + 1) + makespan)
+
+    # Stability term (0 for a from-scratch solve, so the static objective is
+    # recovered exactly). Bounded so its coefficient can sit strictly between
+    # tardiness and makespan in the lexicographic objective.
+    n_ops = len(problem.all_operations())
+    dev_ub = (
+        n_ops * (policy.machine_change_penalty + policy.start_shift_penalty * H)
+        if policy
+        else 0
+    )
+    deviation = model.NewIntVar(0, max(dev_ub, 1), "deviation")
+    model.Add(deviation == (sum(deviation_terms) if deviation_terms else 0))
+
+    n_reassigned = model.NewIntVar(0, n_ops, "n_reassigned")
+    model.Add(n_reassigned == (sum(reassign_lits) if reassign_lits else 0))
+
+    # Lexicographic: tardiness  >>  stability  >>  makespan.
+    # k_dev makes one unit of deviation outweigh any makespan (<= H); k_tard
+    # makes one unit of weighted tardiness outweigh all deviation + makespan.
+    k_dev = H + 1
+    k_tard = dev_ub * k_dev + H + 1
+    model.Minimize(weighted_tardiness * k_tard + deviation * k_dev + makespan)
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = max_time_s
@@ -267,4 +377,6 @@ def solve(problem: ShopProblem, max_time_s: float = 20.0) -> Schedule:
             j: solver.Value(v) for j, v in job_tardiness_vars.items()
         },
         solve_time_s=solver.WallTime(),
+        deviation=solver.Value(deviation),
+        reassigned_ops=solver.Value(n_reassigned),
     )

@@ -13,7 +13,7 @@ from .model import (
     ShopProblem,
     Tool,
 )
-from .solver import Schedule, ScheduledOp, solve
+from .solver import ReschedulePolicy, Schedule, ScheduledOp, solve
 
 __all__ = [
     "Job",
@@ -24,5 +24,6 @@ __all__ = [
     "Tool",
     "Schedule",
     "ScheduledOp",
+    "ReschedulePolicy",
     "solve",
 ]

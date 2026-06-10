@@ -37,7 +37,9 @@ from aps_solver import (
     Machine,
     Operation,
     Operator,
+    ReschedulePolicy,
     Schedule,
+    ScheduledOp,
     ShopProblem,
     Tool,
 )
@@ -172,3 +174,52 @@ def schedule_to_rows(
             }
         )
     return rows
+
+
+def build_policy(
+    prior_rows: list[dict[str, Any]],
+    payload: dict[str, Any],
+    *,
+    freeze_minutes: int = 60,
+    machine_change_penalty: int = 100,
+    start_shift_penalty: int = 1,
+) -> ReschedulePolicy:
+    """Build a minimal-perturbation policy from the previously persisted plan.
+
+    ``prior_rows`` are APS Scheduled Operation records (wall-clock) from the
+    schedule currently on the floor. They are re-expressed in minutes relative
+    to the *new* run's horizon start, which is "now" — so an operation that was
+    due to start within ``freeze_minutes`` (or is already underway, clamping to
+    0) lands inside the freeze window and is pinned in place.
+    """
+    horizon_start = _parse(payload["horizon_start"])
+    horizon = int(payload["horizon_minutes"])
+    prior_ops = []
+    for r in prior_rows:
+        op_id = f"{r['work_order']}::{r['operation_index']}"
+        s = _to_minutes(r["planned_start"], horizon_start, horizon)
+        prior_ops.append(
+            ScheduledOp(
+                op_id=op_id,
+                job_id=r["work_order"],
+                machine_id=r["workstation"],
+                operator_id=r.get("operator"),
+                tool_id=r.get("tool"),
+                start=s,
+                setup_end=_to_minutes(r["setup_end"], horizon_start, horizon)
+                if r.get("setup_end")
+                else s,
+                end=_to_minutes(r["planned_end"], horizon_start, horizon),
+            )
+        )
+    prior = Schedule(
+        status="PRIOR", objective=0.0, weighted_tardiness=0, makespan=0,
+        operations=prior_ops, job_tardiness={}, solve_time_s=0.0,
+    )
+    return ReschedulePolicy(
+        now=0,  # the new horizon starts at "now"
+        freeze_horizon=freeze_minutes,
+        previous=prior,
+        machine_change_penalty=machine_change_penalty,
+        start_shift_penalty=start_shift_penalty,
+    )

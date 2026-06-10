@@ -14,7 +14,7 @@ from frappe.utils import get_datetime, now_datetime
 
 from aps_solver import solve
 
-from .adapter import build_problem, schedule_to_rows
+from .adapter import build_policy, build_problem, schedule_to_rows
 
 # Work Orders in these states are planned; everything else is ignored.
 _PLANNABLE_STATES = ("Not Started", "In Process")
@@ -254,7 +254,12 @@ def _priority_weight(priority) -> int:
 # Run + persist
 # --------------------------------------------------------------------------- #
 def execute_run(run_name: str) -> None:
-    """Body of the background job: solve and persist for one APS Schedule Run."""
+    """Body of the background job: solve and persist for one APS Schedule Run.
+
+    A run is either a full re-plan (Manual / Nightly) or a *reactive* one: when
+    ``trigger_type == "Reactive"`` and a prior plan exists, the solver is given
+    a minimal-perturbation policy so the new plan stays close to the floor.
+    """
     run = frappe.get_doc("APS Schedule Run", run_name)
     run.db_set("status", "Running")
     try:
@@ -266,7 +271,23 @@ def execute_run(run_name: str) -> None:
             return
 
         problem = build_problem(payload)
-        schedule = solve(problem, max_time_s=float(run.max_solve_seconds or 60))
+
+        policy = None
+        if run.trigger_type == "Reactive":
+            source = _prior_plan_source(run.name)
+            if source:
+                run.db_set("previous_run", source)
+                policy = build_policy(
+                    _prior_rows(source),
+                    payload,
+                    freeze_minutes=int(run.freeze_minutes or 60),
+                )
+
+        schedule = solve(
+            problem,
+            max_time_s=float(run.max_solve_seconds or 60),
+            policy=policy,
+        )
 
         run.db_set("solver_status", schedule.status)
         run.db_set("solve_time_seconds", schedule.solve_time_s)
@@ -285,6 +306,8 @@ def execute_run(run_name: str) -> None:
         run.db_set("makespan_minutes", schedule.makespan)
         run.db_set("on_time_jobs", on_time)
         run.db_set("total_jobs", len(schedule.job_tardiness))
+        run.db_set("deviation_score", schedule.deviation)
+        run.db_set("reassigned_ops", schedule.reassigned_ops)
         run.db_set("status", "Completed")
 
         _supersede_older_runs(run.name)
@@ -295,6 +318,28 @@ def execute_run(run_name: str) -> None:
         run.db_set("error_log", frappe.get_traceback())
         frappe.db.commit()
         raise
+
+
+def _prior_plan_source(current: str) -> str | None:
+    """Most recent run that still carries a usable plan (Completed or Stale)."""
+    rows = frappe.get_all(
+        "APS Schedule Run",
+        filters={"status": ["in", ("Completed", "Stale")],
+                 "name": ["!=", current]},
+        order_by="modified desc",
+        limit=1,
+        pluck="name",
+    )
+    return rows[0] if rows else None
+
+
+def _prior_rows(run_name: str) -> list[dict]:
+    return frappe.get_all(
+        "APS Scheduled Operation",
+        filters={"schedule_run": run_name},
+        fields=["work_order", "operation_index", "workstation", "operator",
+                "tool", "planned_start", "setup_end", "planned_end"],
+    )
 
 
 def _supersede_older_runs(current: str) -> None:
@@ -318,7 +363,7 @@ def latest_completed_run() -> str | None:
 
 
 def new_run(trigger_type: str, horizon_days: int = 7,
-            max_solve_seconds: int = 60) -> str:
+            max_solve_seconds: int = 60, freeze_minutes: int = 60) -> str:
     run = frappe.get_doc(
         {
             "doctype": "APS Schedule Run",
@@ -327,6 +372,18 @@ def new_run(trigger_type: str, horizon_days: int = 7,
             "horizon_start": now_datetime(),
             "horizon_days": horizon_days,
             "max_solve_seconds": max_solve_seconds,
+            "freeze_minutes": freeze_minutes,
         }
     ).insert(ignore_permissions=True)
     return run.name
+
+
+def has_pending_run() -> bool:
+    """True if a run is already queued or running (debounce reactive storms)."""
+    return bool(
+        frappe.get_all(
+            "APS Schedule Run",
+            filters={"status": ["in", ("Queued", "Running")]},
+            limit=1,
+        )
+    )

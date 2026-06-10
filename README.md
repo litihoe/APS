@@ -9,8 +9,9 @@ shops (CNC, EDM, grinding, aerospace/medical parts). Target architecture:
   separate stateless solver service.
 
 The repository contains the **Phase 1 solver core** (framework-agnostic
-FJSSP engine, de-risked first) and the **Phase 2 Frappe app** (`aps_planner`)
-that drives it from ERPNext data.
+FJSSP engine, de-risked first), the **Phase 2 Frappe app** (`aps_planner`)
+that drives it from ERPNext data, and **Phase 3 reactive rescheduling** (the
+minimal-perturbation re-solve that makes the planning *dynamic*).
 
 ## What the prototype does
 
@@ -76,7 +77,30 @@ without a bench and can later move to a separate solver service unchanged.
 
 Triggers: nightly cron full re-plan (02:00), manual via
 `POST /api/method/aps_planner.api.run_schedule`, and Work Order / Job Card
-events mark the live schedule **Stale** (reactive re-solve lands in Phase 4).
+events that mark the live schedule **Stale** and enqueue a debounced
+**reactive re-solve** (see below).
+
+### Reactive rescheduling (the "dynamic" part)
+
+A static optimum is worthless ten minutes later when a machine trips or a rush
+order lands. Re-optimising from scratch is correct but *nervous* — it can
+reshuffle the whole floor for a trivial gain, which operators distrust. The
+`ReschedulePolicy` (in `aps_solver/solver.py`) turns a re-solve into a
+**minimal-perturbation** one:
+
+- **Freeze.** Operations already underway, or starting within a `freeze_minutes`
+  window of *now* in the live plan, are pinned to their machine/operator/start —
+  you cannot un-start a job.
+- **Warm start.** Every other operation hints CP-SAT toward its previous
+  assignment, so the solver explores near the incumbent first (fast convergence).
+- **Stability objective.** Changing a machine or shifting a start is penalised,
+  sitting *below* tardiness (on-time delivery still wins) but *above* makespan,
+  so the plan only churns when it actually buys due-date performance. The static
+  objective is recovered exactly when no previous plan is supplied.
+
+Each reactive run records its `deviation_score` and `reassigned_ops`, so you can
+see how much the floor was disturbed. `mark_schedule_stale` enqueues these
+reactively and debounces them (no solve storm during a bulk Work Order import).
 
 ### Install on a bench
 
@@ -99,6 +123,7 @@ python run.py --jobs 16 --seed 7
 
 python tests/test_schedule_valid.py   # validate constraints hold
 python tests/test_adapter.py          # Frappe adapter round trip (no bench)
+python tests/test_reschedule.py       # reactive minimal-perturbation re-solve
 ```
 
 The 12-job instance solves to **OPTIMAL**; larger instances return the best
@@ -109,15 +134,16 @@ production scheduler manages with a time-boxed, warm-started rolling solve.
 
 - **Phase 1 — Static solver.** FJSSP + all four constraints + on-time objective. ✅
 - **Phase 2 — Frappe integration.** DocTypes, adapter, background solve, REST API. ✅ *(needs a live bench for end-to-end verification)*
-- **Phase 3 — OEE feedback loop.** Recalibrate performance/yield factors from Job Card actuals.
-- **Phase 4 — Dynamic rescheduling.** Event triggers (breakdown, rush order, material arrival), rolling horizon, minimal-perturbation re-solve (warm start + pin near-term ops).
+- **Phase 3 — Reactive rescheduling.** Freeze window + warm start + minimal-perturbation objective; event triggers enqueue debounced re-solves. ✅
+- **Phase 4 — OEE feedback loop.** Recalibrate performance/availability/yield factors from Job Card actuals so the plan learns the shop.
 - **Phase 5 — Planner UX.** Gantt board, what-if simulation, manual pinning, KPI dashboards.
 
 ### Modelling notes / next refinements
 
 - **Sequence-dependent setups** (changeover by part family/material) — high value
   in HMLV; add via per-machine `AddCircuit` transition times.
-- **Minimal-perturbation rescheduling** — penalise deviation from the previous
-  schedule so the floor isn't thrashed on every re-solve.
+- **Actuals-aware freezing** — the freeze currently pins by *planned* start; with
+  Job Card actuals it should drop completed ops and clamp in-progress ones to
+  their true remaining time rather than re-running the full duration.
 - **Operator attended-run option** — currently setup-only; some ops need an
   operator for the full cycle (configurable per operation).
