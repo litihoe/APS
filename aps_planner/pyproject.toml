@@ -1,0 +1,14 @@
+[project]
+name = "aps_planner"
+version = "0.1.0"
+description = "Dynamic APS for HMLV precision manufacturing (Frappe app, OR-Tools backbone)"
+requires-python = ">=3.10"
+dependencies = [
+    "ortools>=9.10",
+]
+
+[build-system]
+requires = ["flit_core >=3.4,<4"]
+build-backend = "flit_core.buildapi"
+
+[tool.bench.dev-dependencies]

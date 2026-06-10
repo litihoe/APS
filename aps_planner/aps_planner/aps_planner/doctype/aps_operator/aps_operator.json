@@ -1,0 +1,30 @@
+{
+ "doctype": "DocType",
+ "name": "APS Operator",
+ "module": "APS Planner",
+ "engine": "InnoDB",
+ "autoname": "field:employee",
+ "naming_rule": "By fieldname",
+ "field_order": [
+  "employee", "operator_name", "enabled",
+  "skills_section", "skills",
+  "shift_section", "shifts"
+ ],
+ "fields": [
+  {"fieldname": "employee", "fieldtype": "Link", "options": "Employee", "label": "Employee", "reqd": 1, "unique": 1},
+  {"fieldname": "operator_name", "fieldtype": "Data", "label": "Operator Name",
+   "fetch_from": "employee.employee_name", "read_only": 1},
+  {"fieldname": "enabled", "fieldtype": "Check", "label": "Include in Scheduling", "default": "1"},
+  {"fieldname": "skills_section", "fieldtype": "Section Break", "label": "Skills / Certifications"},
+  {"fieldname": "skills", "fieldtype": "Table", "options": "APS Skill Item", "label": "Skills"},
+  {"fieldname": "shift_section", "fieldtype": "Section Break", "label": "Shift Calendar",
+   "description": "Explicit working windows over the planning horizon. Later phases derive these from ERPNext Shift Assignment automatically."},
+  {"fieldname": "shifts", "fieldtype": "Table", "options": "APS Time Window", "label": "Working Windows"}
+ ],
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+  {"role": "Manufacturing Manager", "read": 1, "write": 1, "create": 1}
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

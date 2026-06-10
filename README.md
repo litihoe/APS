@@ -8,9 +8,9 @@ shops (CNC, EDM, grinding, aerospace/medical parts). Target architecture:
 - **Google OR-Tools (CP-SAT)** as the optimisation backbone, running as a
   separate stateless solver service.
 
-This repository currently contains the **Phase 1 solver prototype** — the
-scheduling core, built and tested in isolation from Frappe so the hard part
-(the optimisation model) is de-risked first.
+The repository contains the **Phase 1 solver core** (framework-agnostic
+FJSSP engine, de-risked first) and the **Phase 2 Frappe app** (`aps_planner`)
+that drives it from ERPNext data.
 
 ## What the prototype does
 
@@ -29,14 +29,63 @@ four constraint families that matter for HMLV precision work, and optimises for
 ## Layout
 
 ```
-aps_solver/
-  model.py    # framework-agnostic domain dataclasses (the Frappe-facing schema)
+aps_solver/                  # Phase 1: pure optimisation core (no Frappe)
+  model.py    # framework-agnostic domain dataclasses
   solver.py   # CP-SAT FJSSP model + solve()
   data.py     # synthetic HMLV shop generator (deterministic)
   report.py   # KPIs + text Gantt
 run.py        # CLI entry point
+
+aps_planner/                 # Phase 2: Frappe app (install with bench)
+  aps_planner/
+    hooks.py                 # nightly cron solve + Work Order/Job Card events
+    tasks.py                 # background jobs, stale-schedule marking
+    api.py                   # REST: run_schedule / get_schedule (for Gantt UI)
+    engine/
+      adapter.py             # pure payload <-> ShopProblem/rows (no frappe import)
+      frappe_io.py           # DocTypes -> payload -> solve -> DocTypes
+    aps_planner/doctype/     # 10 DocTypes (see below)
+
 tests/
   test_schedule_valid.py   # independently re-checks every constraint on the output
+  test_adapter.py          # payload->solve->rows round trip (no bench needed)
+```
+
+## Frappe app (`aps_planner`)
+
+New DocTypes layered over ERPNext Manufacturing (Work Order, Workstation,
+Operation, Employee stay the system of record):
+
+| DocType | Purpose |
+|---|---|
+| **APS Machine Profile** | Per-Workstation OEE factors (performance, availability derate, quality yield) + planned maintenance windows. |
+| **APS Operator** | Links an Employee to skills and shift windows. |
+| **APS Skill** / **APS Tool** | Skill master; fixture/tool master with available quantity. |
+| **APS Operation Profile** | Per-Operation requirements: required skill, required tool, eligible workstations (flexible routing). |
+| **APS Schedule Run** | One solver execution: parameters, status, KPIs. |
+| **APS Scheduled Operation** | One planned operation: assignment + timing, the Gantt's data source. |
+| (children) | APS Time Window, APS Skill Item, APS Eligible Workstation. |
+
+Data flow: `frappe_io.collect_payload()` reduces the site to a plain JSON
+payload (material readiness derived from Work Order Item shortages vs. Bin
+stock and open Purchase Order receipt dates) → `adapter.build_problem()`
+converts wall-clock datetimes to solver minutes → `solve()` →
+`adapter.schedule_to_rows()` converts back → persisted as APS Scheduled
+Operations. The adapter has **no frappe import**, so the whole engine tests
+without a bench and can later move to a separate solver service unchanged.
+
+Triggers: nightly cron full re-plan (02:00), manual via
+`POST /api/method/aps_planner.api.run_schedule`, and Work Order / Job Card
+events mark the live schedule **Stale** (reactive re-solve lands in Phase 4).
+
+### Install on a bench
+
+```bash
+# repo root provides the aps_solver engine package
+pip install -e /path/to/APS
+bench get-app /path/to/APS/aps_planner
+bench --site yoursite install-app aps_planner
+bench --site yoursite migrate
 ```
 
 ## Run it
@@ -49,6 +98,7 @@ python run.py --jobs 20 --time 30   # heavier load (FJSSP is NP-hard; expect FEA
 python run.py --jobs 16 --seed 7
 
 python tests/test_schedule_valid.py   # validate constraints hold
+python tests/test_adapter.py          # Frappe adapter round trip (no bench)
 ```
 
 The 12-job instance solves to **OPTIMAL**; larger instances return the best
@@ -57,8 +107,8 @@ production scheduler manages with a time-boxed, warm-started rolling solve.
 
 ## Roadmap
 
-- **Phase 1 — Static solver (this repo).** FJSSP + all four constraints + on-time objective. ✅
-- **Phase 2 — Frappe integration.** Adapter to load DocTypes → `ShopProblem`, write `Schedule` back as Scheduled Operations; run the solver as a background job.
+- **Phase 1 — Static solver.** FJSSP + all four constraints + on-time objective. ✅
+- **Phase 2 — Frappe integration.** DocTypes, adapter, background solve, REST API. ✅ *(needs a live bench for end-to-end verification)*
 - **Phase 3 — OEE feedback loop.** Recalibrate performance/yield factors from Job Card actuals.
 - **Phase 4 — Dynamic rescheduling.** Event triggers (breakdown, rush order, material arrival), rolling horizon, minimal-perturbation re-solve (warm start + pin near-term ops).
 - **Phase 5 — Planner UX.** Gantt board, what-if simulation, manual pinning, KPI dashboards.

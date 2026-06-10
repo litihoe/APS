@@ -1,0 +1,34 @@
+{
+ "doctype": "DocType",
+ "name": "APS Scheduled Operation",
+ "module": "APS Planner",
+ "engine": "InnoDB",
+ "autoname": "format:APS-OP-{YYYY}-{#######}",
+ "naming_rule": "Expression",
+ "field_order": [
+  "schedule_run", "work_order", "operation_index", "operation",
+  "assignment_section", "workstation", "operator", "tool",
+  "timing_section", "planned_start", "setup_end", "planned_end", "pinned"
+ ],
+ "fields": [
+  {"fieldname": "schedule_run", "fieldtype": "Link", "options": "APS Schedule Run", "label": "Schedule Run", "reqd": 1},
+  {"fieldname": "work_order", "fieldtype": "Link", "options": "Work Order", "label": "Work Order", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "operation_index", "fieldtype": "Int", "label": "Routing Step"},
+  {"fieldname": "operation", "fieldtype": "Link", "options": "Operation", "label": "Operation", "in_list_view": 1},
+  {"fieldname": "assignment_section", "fieldtype": "Section Break", "label": "Assignment"},
+  {"fieldname": "workstation", "fieldtype": "Link", "options": "Workstation", "label": "Workstation", "in_list_view": 1},
+  {"fieldname": "operator", "fieldtype": "Link", "options": "APS Operator", "label": "Operator (setup)"},
+  {"fieldname": "tool", "fieldtype": "Link", "options": "APS Tool", "label": "Tool / Fixture"},
+  {"fieldname": "timing_section", "fieldtype": "Section Break", "label": "Timing"},
+  {"fieldname": "planned_start", "fieldtype": "Datetime", "label": "Planned Start", "in_list_view": 1},
+  {"fieldname": "setup_end", "fieldtype": "Datetime", "label": "Setup End"},
+  {"fieldname": "planned_end", "fieldtype": "Datetime", "label": "Planned End"},
+  {"fieldname": "pinned", "fieldtype": "Check", "label": "Pinned (frozen in re-solves)", "default": "0"}
+ ],
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+  {"role": "Manufacturing Manager", "read": 1, "write": 1, "create": 1}
+ ],
+ "sort_field": "planned_start",
+ "sort_order": "ASC"
+}

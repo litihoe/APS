@@ -1,0 +1,38 @@
+{
+ "doctype": "DocType",
+ "name": "APS Schedule Run",
+ "module": "APS Planner",
+ "engine": "InnoDB",
+ "autoname": "format:APS-RUN-{YYYY}-{#####}",
+ "naming_rule": "Expression",
+ "field_order": [
+  "status", "trigger_type", "horizon_start", "horizon_days", "max_solve_seconds",
+  "results_section", "solver_status", "solve_time_seconds",
+  "weighted_tardiness", "makespan_minutes", "on_time_jobs", "total_jobs",
+  "log_section", "error_log"
+ ],
+ "fields": [
+  {"fieldname": "status", "fieldtype": "Select", "label": "Status",
+   "options": "Draft\nQueued\nRunning\nCompleted\nFailed\nStale\nSuperseded", "default": "Draft", "in_list_view": 1},
+  {"fieldname": "trigger_type", "fieldtype": "Select", "label": "Trigger",
+   "options": "Manual\nNightly\nReactive", "default": "Manual"},
+  {"fieldname": "horizon_start", "fieldtype": "Datetime", "label": "Horizon Start", "reqd": 1},
+  {"fieldname": "horizon_days", "fieldtype": "Int", "label": "Horizon (days)", "default": "7"},
+  {"fieldname": "max_solve_seconds", "fieldtype": "Int", "label": "Solver Time Budget (s)", "default": "60"},
+  {"fieldname": "results_section", "fieldtype": "Section Break", "label": "Results"},
+  {"fieldname": "solver_status", "fieldtype": "Data", "label": "Solver Status", "read_only": 1, "in_list_view": 1},
+  {"fieldname": "solve_time_seconds", "fieldtype": "Float", "label": "Solve Time (s)", "read_only": 1},
+  {"fieldname": "weighted_tardiness", "fieldtype": "Int", "label": "Weighted Tardiness (min)", "read_only": 1},
+  {"fieldname": "makespan_minutes", "fieldtype": "Int", "label": "Makespan (min)", "read_only": 1},
+  {"fieldname": "on_time_jobs", "fieldtype": "Int", "label": "On-time Jobs", "read_only": 1},
+  {"fieldname": "total_jobs", "fieldtype": "Int", "label": "Total Jobs", "read_only": 1},
+  {"fieldname": "log_section", "fieldtype": "Section Break", "label": "Log"},
+  {"fieldname": "error_log", "fieldtype": "Long Text", "label": "Error Log", "read_only": 1}
+ ],
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+  {"role": "Manufacturing Manager", "read": 1, "write": 1, "create": 1}
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}
