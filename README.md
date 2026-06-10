@@ -10,8 +10,9 @@ shops (CNC, EDM, grinding, aerospace/medical parts). Target architecture:
 
 The repository contains the **Phase 1 solver core** (framework-agnostic
 FJSSP engine, de-risked first), the **Phase 2 Frappe app** (`aps_planner`)
-that drives it from ERPNext data, and **Phase 3 reactive rescheduling** (the
-minimal-perturbation re-solve that makes the planning *dynamic*).
+that drives it from ERPNext data, **Phase 3 reactive rescheduling** (the
+minimal-perturbation re-solve that makes the planning *dynamic*), and the
+**Phase 4 OEE feedback loop** (the plan learns the shop from Job Card actuals).
 
 ## What the prototype does
 
@@ -102,6 +103,25 @@ Each reactive run records its `deviation_score` and `reassigned_ops`, so you can
 see how much the floor was disturbed. `mark_schedule_stale` enqueues these
 reactively and debounces them (no solve storm during a bulk Work Order import).
 
+### OEE feedback loop (the plan learns the shop)
+
+Book rates lie; HMLV shops drift. Every Sunday 03:00 (`weekly_oee_calibration`)
+the last 30 days of actuals recalibrate each APS Machine Profile, then a fresh
+plan is queued so Monday runs on measured reality:
+
+| Factor | Evidence | Source |
+|---|---|---|
+| `performance_factor` (OEE-P) | planned vs. actual minutes | submitted Job Cards (time logs) |
+| `quality_yield` (OEE-Q) | good vs. scrapped quantity | Job Card completed / process-loss qty |
+| `availability_derate` (OEE-A) | unplanned downtime share | ERPNext Downtime Entry |
+
+The math (`engine/calibration.py`, pure Python) *nudges* factors with an EWMA
+(default α=0.3) rather than replacing them — one bad week on one fixture can't
+halve a machine's planned capacity, but persistent drift steadily shows up in
+the plan. Factors are clamped to sane bounds, thin evidence (< 5 ops) leaves a
+factor untouched, and every update writes an audit note
+(`P: observed 0.80 over 6 ops, 1.00 -> 0.94; …`) onto the profile.
+
 ### Install on a bench
 
 ```bash
@@ -124,6 +144,7 @@ python run.py --jobs 16 --seed 7
 python tests/test_schedule_valid.py   # validate constraints hold
 python tests/test_adapter.py          # Frappe adapter round trip (no bench)
 python tests/test_reschedule.py       # reactive minimal-perturbation re-solve
+python tests/test_calibration.py      # OEE feedback loop math
 ```
 
 The 12-job instance solves to **OPTIMAL**; larger instances return the best
@@ -135,7 +156,7 @@ production scheduler manages with a time-boxed, warm-started rolling solve.
 - **Phase 1 — Static solver.** FJSSP + all four constraints + on-time objective. ✅
 - **Phase 2 — Frappe integration.** DocTypes, adapter, background solve, REST API. ✅ *(needs a live bench for end-to-end verification)*
 - **Phase 3 — Reactive rescheduling.** Freeze window + warm start + minimal-perturbation objective; event triggers enqueue debounced re-solves. ✅
-- **Phase 4 — OEE feedback loop.** Recalibrate performance/availability/yield factors from Job Card actuals so the plan learns the shop.
+- **Phase 4 — OEE feedback loop.** Weekly EWMA recalibration of performance/availability/yield from Job Card actuals + Downtime Entries. ✅
 - **Phase 5 — Planner UX.** Gantt board, what-if simulation, manual pinning, KPI dashboards.
 
 ### Modelling notes / next refinements

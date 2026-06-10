@@ -20,6 +20,10 @@ scheduler_events = {
     "cron": {
         # Full re-plan every night at 02:00, before the morning shift.
         "0 2 * * *": ["aps_planner.tasks.nightly_full_replan"],
+        # OEE feedback loop: recalibrate machine factors from the last 30
+        # days of Job Card actuals every Sunday at 03:00, so Monday's plan
+        # uses measured reality instead of book rates.
+        "0 3 * * 0": ["aps_planner.tasks.weekly_oee_calibration"],
     },
 }
 

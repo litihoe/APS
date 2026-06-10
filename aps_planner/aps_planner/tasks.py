@@ -4,7 +4,21 @@ from __future__ import annotations
 
 import frappe
 
-from .engine import frappe_io
+from .engine import frappe_io, oee_io
+
+
+def weekly_oee_calibration() -> None:
+    """Cron Sun 03:00: recalibrate OEE factors from the last 30 days of
+    actuals, then queue a fresh plan so the new factors take effect."""
+    results = oee_io.run_calibration(lookback_days=30)
+    if results:
+        run_name = frappe_io.new_run(trigger_type="Nightly")
+        frappe.enqueue(
+            "aps_planner.engine.frappe_io.execute_run",
+            queue="long",
+            timeout=3600,
+            run_name=run_name,
+        )
 
 
 def nightly_full_replan() -> None:
