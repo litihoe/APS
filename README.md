@@ -181,7 +181,13 @@ python tests/test_schedule_valid.py   # validate constraints hold
 python tests/test_adapter.py          # Frappe adapter round trip (no bench)
 python tests/test_reschedule.py       # reactive minimal-perturbation re-solve
 python tests/test_calibration.py      # OEE feedback loop math
+
+pip install pytest && pytest tests/   # or run all four suites together (19 tests)
 ```
+
+All four suites run on every pull request and on pushes to `main` via GitHub
+Actions (`.github/workflows/ci.yml`, Python 3.10–3.12). They cover the
+framework-agnostic core only, so CI needs no Frappe bench.
 
 The 12-job instance solves to **OPTIMAL**; larger instances return the best
 **FEASIBLE** solution found within the time budget — exactly the trade-off a
