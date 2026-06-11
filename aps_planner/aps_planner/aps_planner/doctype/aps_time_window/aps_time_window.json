@@ -1,0 +1,16 @@
+{
+ "doctype": "DocType",
+ "name": "APS Time Window",
+ "module": "APS Planner",
+ "engine": "InnoDB",
+ "istable": 1,
+ "editable_grid": 1,
+ "field_order": ["from_time", "to_time"],
+ "fields": [
+  {"fieldname": "from_time", "fieldtype": "Datetime", "label": "From", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "to_time", "fieldtype": "Datetime", "label": "To", "reqd": 1, "in_list_view": 1}
+ ],
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

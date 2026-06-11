@@ -1,0 +1,20 @@
+{
+ "doctype": "DocType",
+ "name": "APS Tool",
+ "module": "APS Planner",
+ "engine": "InnoDB",
+ "autoname": "field:tool_name",
+ "naming_rule": "By fieldname",
+ "field_order": ["tool_name", "quantity", "description"],
+ "fields": [
+  {"fieldname": "tool_name", "fieldtype": "Data", "label": "Tool / Fixture Name", "reqd": 1, "unique": 1},
+  {"fieldname": "quantity", "fieldtype": "Int", "label": "Available Quantity", "default": "1", "reqd": 1},
+  {"fieldname": "description", "fieldtype": "Small Text", "label": "Description"}
+ ],
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+  {"role": "Manufacturing Manager", "read": 1, "write": 1, "create": 1}
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

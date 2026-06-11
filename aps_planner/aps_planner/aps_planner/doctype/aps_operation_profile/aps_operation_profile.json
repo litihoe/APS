@@ -1,0 +1,29 @@
+{
+ "doctype": "DocType",
+ "name": "APS Operation Profile",
+ "module": "APS Planner",
+ "engine": "InnoDB",
+ "autoname": "field:operation",
+ "naming_rule": "By fieldname",
+ "field_order": [
+  "operation", "required_skill", "required_tool",
+  "machines_section", "eligible_workstations"
+ ],
+ "fields": [
+  {"fieldname": "operation", "fieldtype": "Link", "options": "Operation", "label": "Operation", "reqd": 1, "unique": 1},
+  {"fieldname": "required_skill", "fieldtype": "Link", "options": "APS Skill", "label": "Required Skill",
+   "description": "A qualified operator must attend the setup. Leave empty for unattended operations."},
+  {"fieldname": "required_tool", "fieldtype": "Link", "options": "APS Tool", "label": "Required Tool / Fixture",
+   "description": "Held for the full operation duration. Leave empty if none."},
+  {"fieldname": "machines_section", "fieldtype": "Section Break", "label": "Flexible Routing"},
+  {"fieldname": "eligible_workstations", "fieldtype": "Table", "options": "APS Eligible Workstation",
+   "label": "Eligible Workstations",
+   "description": "All workstations able to run this operation. If empty, the Work Order operation's own workstation is used."}
+ ],
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+  {"role": "Manufacturing Manager", "read": 1, "write": 1, "create": 1}
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

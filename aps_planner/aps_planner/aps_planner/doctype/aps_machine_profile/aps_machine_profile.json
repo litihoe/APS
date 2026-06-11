@@ -1,0 +1,37 @@
+{
+ "doctype": "DocType",
+ "name": "APS Machine Profile",
+ "module": "APS Planner",
+ "engine": "InnoDB",
+ "autoname": "field:workstation",
+ "naming_rule": "By fieldname",
+ "field_order": [
+  "workstation", "enabled", "oee_section",
+  "performance_factor", "availability_derate", "quality_yield",
+  "calibration_section", "last_calibrated", "calibration_note",
+  "maintenance_section", "maintenance_windows"
+ ],
+ "fields": [
+  {"fieldname": "workstation", "fieldtype": "Link", "options": "Workstation", "label": "Workstation", "reqd": 1, "unique": 1},
+  {"fieldname": "enabled", "fieldtype": "Check", "label": "Include in Scheduling", "default": "1"},
+  {"fieldname": "oee_section", "fieldtype": "Section Break", "label": "OEE Factors"},
+  {"fieldname": "performance_factor", "fieldtype": "Float", "label": "Performance Factor (OEE-P)", "default": "1.0",
+   "description": "Effective speed vs. book rate. 0.9 = runs at 90% of nominal, jobs take ~11% longer."},
+  {"fieldname": "availability_derate", "fieldtype": "Float", "label": "Availability Derate (OEE-A)", "default": "1.0",
+   "description": "Historical unplanned-downtime derate applied on top of planned maintenance. Recalibrated from Job Card actuals."},
+  {"fieldname": "quality_yield", "fieldtype": "Float", "label": "Quality Yield (OEE-Q)", "default": "1.0",
+   "description": "Expected good-parts ratio on this machine; inflates required run quantity."},
+  {"fieldname": "calibration_section", "fieldtype": "Section Break", "label": "OEE Calibration"},
+  {"fieldname": "last_calibrated", "fieldtype": "Datetime", "label": "Last Calibrated", "read_only": 1},
+  {"fieldname": "calibration_note", "fieldtype": "Small Text", "label": "Calibration Note", "read_only": 1,
+   "description": "How the last weekly calibration moved each factor (from Job Card actuals and Downtime Entries)."},
+  {"fieldname": "maintenance_section", "fieldtype": "Section Break", "label": "Planned Maintenance"},
+  {"fieldname": "maintenance_windows", "fieldtype": "Table", "options": "APS Time Window", "label": "Maintenance Windows"}
+ ],
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+  {"role": "Manufacturing Manager", "read": 1, "write": 1, "create": 1}
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

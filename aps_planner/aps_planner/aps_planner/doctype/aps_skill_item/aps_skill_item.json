@@ -1,0 +1,15 @@
+{
+ "doctype": "DocType",
+ "name": "APS Skill Item",
+ "module": "APS Planner",
+ "engine": "InnoDB",
+ "istable": 1,
+ "editable_grid": 1,
+ "field_order": ["skill"],
+ "fields": [
+  {"fieldname": "skill", "fieldtype": "Link", "options": "APS Skill", "label": "Skill", "reqd": 1, "in_list_view": 1}
+ ],
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}
